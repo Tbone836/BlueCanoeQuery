@@ -16,7 +16,9 @@ endY = int(input("End Year? "))
 response = client.start_query(
     logGroupName = '/aws/lambda/ml-coordinator',
     queryString= "filter (data = 'invokeLambda(ml-word-phoneme-alignment): Lambda failed - PocketSphinx met trouble to match final result with the grammar in some frames on the word-level alignment')", 
-    #queryString = "filter (response.succeeded = FALSE)",
+    #queryString = "filter (data = 'invokeLambda(ml-lr_classifier): Lambda failed - undefined')",
+    #queryString = "filter (data = 'invokeLambda(ml-vowel-quality): Lambda failed - undefined')",
+    #queryString = "filter (data = 'invokeLambda(ml-vowel-insertion): Lambda failed - Error In Processing At Least One phonemeTimingInfo')",
     #These are the time stamps representing the last week.
     startTime= int(datetime.datetime(startY, startM, startD, 0, 0).timestamp()),
     endTime=int(datetime.datetime(endY, endM, endD, 0, 0).timestamp())
@@ -30,46 +32,54 @@ while(status != 'Complete'):
     print(str(count) + status)
     count += 1
 results = client.get_query_results(queryId = response['queryId'])
-#print(results['results'][0])
 
 logsWithErrors = []
 ptrRecords = []
-for i in range(0, len(results['results'])):
-    #This gets the ptr value which tells us the record of the log entry
 
+for i in range(0, len(results['results'])):
+    #Every set of log events has a start and end log. Every log in that set has a similar identifier
+    #This will help to avoid duplicates
     identifier = results['results'][i][1]['value'][25:60]
+    #This gets the ptr value which tells us the record of the log entry
     ptr = results['results'][i][2]['value']
+    #Checks to make sure there is no log from the same set (they would point to the same information)
     if identifier not in logsWithErrors:
         logsWithErrors.append(identifier)
         ptrRecords.append(ptr)
 print(len(ptrRecords))
 i=0
 for ptr in ptrRecords:
+    #This function returns a dictionary with the time the log was made and the stream and logGroupName
     response = client.get_log_record(logRecordPointer = ptr)
     events = client.get_log_events(logGroupName='/aws/lambda/ml-coordinator', 
                                 logStreamName=response['logRecord']['@logStream'],
                                 startTime=int(response['logRecord']['@timestamp']),
+                                #The actual time could be rounded up or down so I have the +1 to account for it
                                 endTime=int(response['logRecord']['@timestamp'])+1,
                                 limit = 1, startFromHead = True)
 
-    formattedData = goBackToInfo(response['logRecord']['@logStream'], events['nextBackwardToken'])
-    formattedData = formattedData.split('\"')
-    transcriptWords = formattedData[-1*(len(formattedData)-formattedData.index('transcript')-1):]
+    notFormattedData = goBackToInfo(response['logRecord']['@logStream'], events['nextBackwardToken'])
+    notFormattedData = notFormattedData.split('\"')
+
+    transcriptWords = notFormattedData[-1*(len(notFormattedData)-notFormattedData.index('transcript')-1):]
     #print(len(transcriptWords))
     dictJson = {}
-    dictJson['L1'] = formattedData[formattedData.index('L1')+2]
-    dictJson['b64Audio'] = formattedData[formattedData.index('b64Audio')+2]
+    dictJson['L1'] = notFormattedData[notFormattedData.index('L1')+2]
+    dictJson['b64Audio'] = notFormattedData[notFormattedData.index('b64Audio')+2]
     transcriptArray = []
     transcriptDict={}
     for x in range(0, len(transcriptWords)):
         currentWord = transcriptWords[x]
-        #print(str(x) + currentWord)
+        #The spliced array is like ['[{', 'word', ':', 'red', '},{' , 'isFocusWord , :false}]]
+        #It repeats itself every six indexes so the 3 is the distance the value of 'word' from a mod 6
         if (x+3)%6 == 0:
             transcriptDict['word'] = currentWord
         elif (x%6==0 and x != 0):
             if currentWord[1] == 't':
+                #This pulls the word true the string ':true}]'
                 transcriptDict['isFocusWord'] = currentWord[1:5]
             else:
+                #This pulls the word false the string ':false}]'
                 transcriptDict['isFocusWord'] = currentWord[1:6]
             transcriptArray.append(transcriptDict)
             transcriptDict = {}

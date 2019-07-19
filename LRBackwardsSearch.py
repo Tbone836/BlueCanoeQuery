@@ -12,14 +12,14 @@ def goBackToInfo(logStream, backToken):
         events = newEvent['events']
         spliced = events[0]['message'].split("\"")
         if "L1" in spliced:
-            if "transcript" not in spliced:
+            if "expectedPhonemes" not in spliced:
                 currentEvent = client.get_log_events(logGroupName='/aws/lambda/ml-coordinator', 
                                             logStreamName=logStream,
                                             nextToken=newEvent['nextForwardToken'],
                                             limit = 1, startFromHead = True)
                 newEvent['events'][0]['message'] += currentEvent['events'][0]['message']
                 lastEvent = currentEvent
-                while "transcript" not in currentEvent['events'][0]['message']:
+                while "expectedPhonemes" not in currentEvent['events'][0]['message']:
                     currentEvent = client.get_log_events(logGroupName='/aws/lambda/ml-coordinator', 
                                                 logStreamName=logStream,
                                                 nextToken=lastEvent['nextForwardToken'],
