@@ -67,23 +67,24 @@ for ptr in ptrRecords:
     dictJson['b64Audio'] = notFormattedData[notFormattedData.index('b64Audio')+2]
     transcriptArray = []
     transcriptDict={}
+    transcriptDictRev={}
     print(transcriptWords)
     for x in range(0, len(transcriptWords)):
         currentWord = transcriptWords[x]
         #The spliced array is like ['[{', 'word', ':', 'red', '},{' , 'isFocusWord , :false}]]
         #It repeats itself every six indexes so the 3 is the distance the value of 'word' from a mod 6
         if currentWord == 'startTime':
-            transcriptDict['startTime'] = transcriptDict[x+1][1:-1]
-        elif currentWord == 'endTime:
-            transcriptDict['endTime'] = transcriptDict[x+1][1:-1]
+            transcriptDict['startTime'] = transcriptWords[x+1][1:-1]
+        elif currentWord == 'endTime':
+            transcriptDict['endTime'] = transcriptWords[x+1][1:-1]
         elif currentWord == 'phoneme':
-            transcriptDict['phoneme'] = transcriptDict[x+1]
+            transcriptDict['phoneme'] = transcriptWords[x+1]
+            #transcriptDictRev['phoneme'] = transcriptDict['phoneme']
+            #transcriptDictRev['endTime'] = transcriptDict['endTime']
+            #transcriptDictRev['startTime'] = transcriptDict['startTime']
+            #transcriptArray.append(transcriptDictRev)
+            #transcriptDict = {}
             transcriptDictRev={}
-            transcriptDictRev['phoneme'] = transcriptDict['phoneme']
-            transcriptDictRev['endTime'] = transcriptDict['endTime']
-            transcriptDictRev['startTime'] = transcriptDict['startTime']
-            transcriptArray.append(transcriptDict)
-            transcriptDict = {}
     dictJson['requestID'] = events['ResponseMetadata']['RequestId']
     dictJson['transcript'] = transcriptArray
     with open("lrErrors" + str(i) + ".json","w") as outfile:
