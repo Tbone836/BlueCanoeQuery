@@ -3,6 +3,7 @@ import time
 import json
 import datetime
 from LRBackwardsSearch import goBackToInfo
+from collections import OrderedDict
 
 client = boto3.client("logs")
 startM = int(input("Start Month? "))
@@ -60,33 +61,30 @@ for ptr in ptrRecords:
     notFormattedData = goBackToInfo(response['logRecord']['@logStream'], events['nextBackwardToken'])
     notFormattedData = notFormattedData.split('\"')
 
-    transcriptWords = notFormattedData[-1*(len(notFormattedData)-notFormattedData.index('expectedPhonemes')-1):]
+    listExpectedPhonemes = notFormattedData[-1*(len(notFormattedData)-notFormattedData.index('expectedPhonemes')-1):]
   
     dictJson = {}
+    dictJson['requestID'] = events['ResponseMetadata']['RequestId']
     dictJson['L1'] = notFormattedData[notFormattedData.index('L1')+2]
     dictJson['b64Audio'] = notFormattedData[notFormattedData.index('b64Audio')+2]
-    transcriptArray = []
-    transcriptDict={}
-    transcriptDictRev={}
-    print(transcriptWords)
-    for x in range(0, len(transcriptWords)):
-        currentWord = transcriptWords[x]
+    phonemeArray = []
+    phonemeDict=OrderedDict()
+    for x in range(0, len(listExpectedPhonemes)):
+        currentWord = listExpectedPhonemes[x]
         #The spliced array is like ['[{', 'word', ':', 'red', '},{' , 'isFocusWord , :false}]]
         #It repeats itself every six indexes so the 3 is the distance the value of 'word' from a mod 6
         if currentWord == 'startTime':
-            transcriptDict['startTime'] = transcriptWords[x+1][1:-1]
+            start = listExpectedPhonemes[x+1]
+            start = start.split("}")
+            phonemeDict['startTime'] = start[0][1:]
+            phonemeArray.append(phonemeDict)
+            phonemeDict = {}
         elif currentWord == 'endTime':
-            transcriptDict['endTime'] = transcriptWords[x+1][1:-1]
+            phonemeDict['endTime'] = listExpectedPhonemes[x+1][1:-1]
         elif currentWord == 'phoneme':
-            transcriptDict['phoneme'] = transcriptWords[x+1]
-            #transcriptDictRev['phoneme'] = transcriptDict['phoneme']
-            #transcriptDictRev['endTime'] = transcriptDict['endTime']
-            #transcriptDictRev['startTime'] = transcriptDict['startTime']
-            #transcriptArray.append(transcriptDictRev)
-            #transcriptDict = {}
-            transcriptDictRev={}
-    dictJson['requestID'] = events['ResponseMetadata']['RequestId']
-    dictJson['transcript'] = transcriptArray
+            phonemeDict['phoneme'] = listExpectedPhonemes[x+2]
+        
+    dictJson['expectedPhonemes'] = phonemeArray
     with open("lrErrors" + str(i) + ".json","w") as outfile:
         json.dump(dictJson, outfile, indent = 4, sort_keys = True)
     i+=1

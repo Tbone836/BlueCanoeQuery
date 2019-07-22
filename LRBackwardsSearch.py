@@ -11,7 +11,7 @@ def goBackToInfo(logStream, backToken):
                                           limit = 1, startFromHead = True)
         events = newEvent['events']
         spliced = events[0]['message'].split("\"")
-        if "L1" in spliced:
+        if "L1" in spliced and 'invokeLambda(ml-lr_classifier): sending request' in spliced:
             if "expectedPhonemes" not in spliced:
                 currentEvent = client.get_log_events(logGroupName='/aws/lambda/ml-coordinator', 
                                             logStreamName=logStream,
