@@ -4,6 +4,7 @@ import json
 import datetime
 from LRBackwardsSearch import goBackToInfo
 from collections import OrderedDict
+from ExpectedPhonemes import expectedPhonemesOrganize
 
 client = boto3.client("logs")
 startM = int(input("Start Month? "))
@@ -15,8 +16,7 @@ endD = int(input("End Day? "))
 endY = int(input("End Year? "))
 
 response = client.start_query(
-    logGroupName = '/aws/lambda/ml-coordinator',
-    #queryString= "filter (data = 'invokeLambda(ml-word-phoneme-alignment): Lambda failed - PocketSphinx met trouble to match final result with the grammar in some frames on the word-level alignment')", 
+    logGroupName = '/aws/lambda/ml-coordinator', 
     queryString = "filter (data = 'invokeLambda(ml-lr_classifier): Lambda failed - undefined')",
     #queryString = "filter (data = 'invokeLambda(ml-vowel-quality): Lambda failed - undefined')",
     #queryString = "filter (data = 'invokeLambda(ml-vowel-insertion): Lambda failed - Error In Processing At Least One phonemeTimingInfo')",
@@ -32,22 +32,21 @@ while(status != 'Complete'):
     status = client.get_query_results(queryId = response['queryId'])['status']
     print(str(count) + status)
     count += 1
-results = client.get_query_results(queryId = response['queryId'])
+query_results = client.get_query_results(queryId = response['queryId'])
 
 logsWithErrors = []
 ptrRecords = []
-for i in range(0, len(results['results'])):
+for i in range(0, len(query_results['results'])):
     #Every set of log events has a start and end log. Every log in that set has a similar identifier
     #This will help to avoid duplicates
-    identifier = results['results'][i][1]['value'][25:60]
+    identifier = query_results['results'][i][1]['value'][25:60]
     #This gets the ptr value which tells us the record of the log entry
-    ptr = results['results'][i][2]['value']
+    ptr = query_results['results'][i][2]['value']
     #Checks to make sure there is no log from the same set (they would point to the same information)
     if identifier not in logsWithErrors:
         logsWithErrors.append(identifier)
         ptrRecords.append(ptr)
 print(len(ptrRecords))
-i=0
 for ptr in ptrRecords:
     #This function returns a dictionary with the time the log was made and the stream and logGroupName
     response = client.get_log_record(logRecordPointer = ptr)
@@ -59,32 +58,7 @@ for ptr in ptrRecords:
                                 limit = 1, startFromHead = True)
 
     notFormattedData = goBackToInfo(response['logRecord']['@logStream'], events['nextBackwardToken'])
-    notFormattedData = notFormattedData.split('\"')
-
-    listExpectedPhonemes = notFormattedData[-1*(len(notFormattedData)-notFormattedData.index('expectedPhonemes')-1):]
-  
-    dictJson = {}
-    dictJson['requestID'] = events['ResponseMetadata']['RequestId']
-    dictJson['L1'] = notFormattedData[notFormattedData.index('L1')+2]
-    dictJson['b64Audio'] = notFormattedData[notFormattedData.index('b64Audio')+2]
-    phonemeArray = []
-    phonemeDict=OrderedDict()
-    for x in range(0, len(listExpectedPhonemes)):
-        currentWord = listExpectedPhonemes[x]
-        #The spliced array is like ['[{', 'word', ':', 'red', '},{' , 'isFocusWord , :false}]]
-        #It repeats itself every six indexes so the 3 is the distance the value of 'word' from a mod 6
-        if currentWord == 'startTime':
-            start = listExpectedPhonemes[x+1]
-            start = start.split("}")
-            phonemeDict['startTime'] = start[0][1:]
-            phonemeArray.append(phonemeDict)
-            phonemeDict = {}
-        elif currentWord == 'endTime':
-            phonemeDict['endTime'] = listExpectedPhonemes[x+1][1:-1]
-        elif currentWord == 'phoneme':
-            phonemeDict['phoneme'] = listExpectedPhonemes[x+2]
+    dictJson = expectedPhonemesOrganize(notFormattedData)
         
-    dictJson['expectedPhonemes'] = phonemeArray
     with open("lrErrors" + str(i) + ".json","w") as outfile:
         json.dump(dictJson, outfile, indent = 4, sort_keys = True)
-    i+=1

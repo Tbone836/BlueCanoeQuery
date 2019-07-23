@@ -2,7 +2,9 @@ import boto3
 import time
 import json
 import datetime
-from UpdateBackwardsSearch import goBackToInfo
+from VQBackwards import goBackToInfo
+from collections import OrderedDict
+from ExpectedPhonemes import expectedPhonomesOrganize
 
 client = boto3.client("logs")
 startM = int(input("Start Month? "))
@@ -12,14 +14,15 @@ startY = int(input("Start Year? "))
 endM = int(input("End Month? "))
 endD = int(input("End Day? "))
 endY = int(input("End Year? "))
+
 response = client.start_query(
     logGroupName = '/aws/lambda/ml-coordinator',
     #queryString= "filter (data = 'invokeLambda(ml-word-phoneme-alignment): Lambda failed - PocketSphinx met trouble to match final result with the grammar in some frames on the word-level alignment')", 
     #queryString = "filter (data = 'invokeLambda(ml-lr_classifier): Lambda failed - undefined')",
-    #queryString = "filter (data = 'invokeLambda(ml-vowel-quality): Lambda failed - undefined')",
-    queryString = "filter (data = 'invokeLambda(ml-vowel-insertion): Lambda failed - Error In Processing At Least One phonemeTimingInfo')",
+    queryString = "filter (data = 'invokeLambda(ml-vowel-quality): Lambda failed - undefined')",
+    #queryString = "filter (data = 'invokeLambda(ml-vowel-insertion): Lambda failed - Error In Processing At Least One phonemeTimingInfo')",
     #These are the time stamps representing the last week.
-    startTime= int(datetime.datetime(startY, startM, startD, 0, 0).timestamp()),
+    startTime=int(datetime.datetime(startY, startM, startD, 0, 0).timestamp()),
     endTime=int(datetime.datetime(endY, endM, endD, 0, 0).timestamp())
 )
 status = client.get_query_results(queryId = response['queryId'])['status']
@@ -30,17 +33,16 @@ while(status != 'Complete'):
     status = client.get_query_results(queryId = response['queryId'])['status']
     print(str(count) + status)
     count += 1
-results = client.get_query_results(queryId = response['queryId'])
+query_results = client.get_query_results(queryId = response['queryId'])
 
 logsWithErrors = []
 ptrRecords = []
-
-for i in range(0, len(results['results'])):
+for i in range(0, len(query_results['results'])):
     #Every set of log events has a start and end log. Every log in that set has a similar identifier
     #This will help to avoid duplicates
-    identifier = results['results'][i][1]['value'][25:60]
+    identifier = query_results['results'][i][1]['value'][25:60]
     #This gets the ptr value which tells us the record of the log entry
-    ptr = results['results'][i][2]['value']
+    ptr = query_results['results'][i][2]['value']
     #Checks to make sure there is no log from the same set (they would point to the same information)
     if identifier not in logsWithErrors:
         logsWithErrors.append(identifier)
@@ -58,32 +60,8 @@ for ptr in ptrRecords:
                                 limit = 1, startFromHead = True)
 
     notFormattedData = goBackToInfo(response['logRecord']['@logStream'], events['nextBackwardToken'])
-    notFormattedData = notFormattedData.split('\"')
-
-    transcriptWords = notFormattedData[-1*(len(notFormattedData)-notFormattedData.index('transcript')-1):]
-    #print(len(transcriptWords))
-    dictJson = {}
-    dictJson['L1'] = notFormattedData[notFormattedData.index('L1')+2]
-    dictJson['b64Audio'] = notFormattedData[notFormattedData.index('b64Audio')+2]
-    transcriptArray = []
-    transcriptDict={}
-    for x in range(0, len(transcriptWords)):
-        currentWord = transcriptWords[x]
-        #The spliced array is like ['[{', 'word', ':', 'red', '},{' , 'isFocusWord , :false}]]
-        #It repeats itself every six indexes so the 3 is the distance the value of 'word' from a mod 6
-        if (x+3)%6 == 0:
-            transcriptDict['word'] = currentWord
-        elif (x%6==0 and x != 0):
-            if currentWord[1] == 't':
-                #This pulls the word true the string ':true}]'
-                transcriptDict['isFocusWord'] = currentWord[1:5]
-            else:
-                #This pulls the word false the string ':false}]'
-                transcriptDict['isFocusWord'] = currentWord[1:6]
-            transcriptArray.append(transcriptDict)
-            transcriptDict = {}
-    dictJson['requestID'] = events['ResponseMetadata']['RequestId']
-    dictJson['transcript'] = transcriptArray
-    with open("testformat" + str(i) + ".json","w") as outfile:
-        json.dump(dictJson, outfile, indent = 4, sort_keys = True)
-    i+=1
+    if notFormattedData != None:
+        dictJson = expectedPhonomesOrganize(notFormattedData)
+        with open("vowelqerror" + str(i) + ".json","w") as outfile:
+            json.dump(dictJson, outfile, indent = 4, sort_keys = True)
+        i += 1
